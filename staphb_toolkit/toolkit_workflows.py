@@ -143,6 +143,16 @@ def main():
     parser_cedar.add_argument('--get_config',action="store_true",help="Get a Nextflow configuration template for Cedar.")
     parser_cedar.add_argument('--resume', default="", action="store_const",const="-resume",help="resume a previous run")
 
+    #lombardy----------------------------------------
+    parser_lombardy = subparsers.add_parser('lombardy', help='Hybrid genome assembly, prophage and plasmid identification and annotation', add_help=False)
+    parser_lombardy.add_argument('reads_path', type=str,help="path to the location of the reads in a fastq format",nargs='?', default=False)
+    parser_lombadry.add_argument('--metadata', type=str,help="path to the location of the metadata.csv",nargs='?', default=False)
+    parser_lombardy.add_argument('--output','-o',metavar="<output_path>",type=str,help="Path to ouput directory, default \"lombardy_results\".",default="lombardy_results")
+    parser_lombardy.add_argument('--profile', type=str,choices=["docker","singularity"],help="Nextflow profile. Default will try docker first, then singularity if the docker executable cannot be found.")
+    parser_lombardy.add_argument('--config','-c', type=str,help="Nextflow custom configuration.")
+    parser_lombardy.add_argument('--get_config',action="store_true",help="Get a Nextflow configuration template for lombardy.")
+    parser_lombardy.add_argument('--resume', default="", action="store_const",const="-resume",help="resume a previous run")
+
 
     #----------------------------------------------
     args = parser.parse_args()
@@ -544,8 +554,6 @@ def main():
 
     #cutshaw--------------------------------
 
-    #cutshaw--------------------------------
-
     if program == 'cutshaw':
         #cutshaw path
         cutshaw_path = os.path.join(workflows_path,"cutshaw/")
@@ -590,7 +598,7 @@ def main():
         print("Starting the Cutshaw pipeline:")
         child = pexpect.spawn(command)
         child.interact()
-        
+
    #cedar--------------------------------
 
     if program == 'cedar':
@@ -633,5 +641,52 @@ def main():
 
         #run command using nextflow in a subprocess
         print("Starting the Cedar pipeline:")
+        child = pexpect.spawn(command)
+        child.interact()
+
+    #lombardy-------------------------------
+
+    if program == 'lombardy':
+        #lombardy path
+        lombardy_path = os.path.join(workflows_path,"lombardy/")
+
+        #give config to user if requested
+        if args.get_config:
+            config_path = os.path.join(lombardy_path,"configs/lombardy_config_template.config")
+            dest_path = os.path.join(os.getcwd(),date.today().strftime("%y-%m-%d")+"_lombardy.config")
+            copyfile(config_path,dest_path)
+            sys.exit()
+
+        #check for reads_path
+        if not args.reads_path:
+            parser_lombardy.print_help()
+            print("Please specify a path to a directory containing the raw reads.")
+            sys.exit(1)
+
+
+        #check for config or profile
+        config = ""
+        if args.config:
+            config = "-C " + os.path.abspath(args.config)
+            profile = ""
+        elif args.profile:
+            profile = f"-profile {args.profile}"
+        elif not profile:
+            print('Singularity or Docker is not installed or not in found in PATH.')
+            sys.exit(1)
+
+        #set work dir into local logs dir if profile not aws
+        work = ""
+        if profile and not args.config:
+            work = f"-w {args.output}/logs/work"
+
+        #build command
+        command = nextflow_path
+        print(args.report_title)
+        command = command + f" {config} run {lombardy_path}/lombardy.nf {profile} {args.resume} --reads {args.reads_path} --metadata {args.metadata} --title \"{args.report_title}\" --outdir {args.output} -with-trace {args.output}/logs/{exec_time}lombardy_trace.txt -with-report {args.output}/logs/{exec_time}lombardy_execution_report.html {work}"
+        print(command)
+
+        #run command using nextflow in a subprocess
+        print("Starting the Lombardy pipeline:")
         child = pexpect.spawn(command)
         child.interact()
