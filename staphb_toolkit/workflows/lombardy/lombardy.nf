@@ -117,5 +117,10 @@ process porechop {
   set val(name), file(reads) from nanopore_reads
 
   output:
-  tuple
+  tuple name, file("${name}.fastq") into chopped_binned_nanopore_reads
+
+  shell:
+  """
+  porechop -i ${name} -b output_dir
+  """
 }
