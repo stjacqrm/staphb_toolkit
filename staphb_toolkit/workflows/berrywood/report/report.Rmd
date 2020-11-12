@@ -1,0 +1,173 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+    - \usepackage{fancyhdr}
+    - \usepackage{fontspec}
+    - \usepackage{xcolor}
+    - \geometry{left = 0.5in,right = 0.5in}
+mainfont: Roboto
+sansfont: Roboto
+urlcolor: purplepeopleeater
+---
+<!-- define color and adjust lengths for header and footer-->
+\definecolor{purplepeopleeater}{RGB}{106,13,75}
+\addtolength{\headheight}{3.0cm}
+\addtolength{\topmargin}{-0.5in}
+\addtolength{\footskip}{-0.225in}
+
+<!-- % setup header -->
+\pagestyle{fancy}
+\fancyhf{}
+
+<!-- header content -->
+<!-- Uncomment the line of code below to include a header -->
+<!-- \fancyhead[L]{\raisebox{-0.25\height}{\includegraphics[height = 2.5cm]{path_to_your_header_here.png}}} -->
+\fancyhead[R]{\Huge Genomic Clustering Report\\
+\Large `r paste(Sys.Date())`}
+
+<!-- create red header line -->
+\renewcommand{\headrulewidth}{1pt}
+\renewcommand{\headrule}{\hbox to\headwidth{%
+    \color{purplepeopleeater}\leaders\hrule height \headrulewidth\hfill}}
+
+<!-- footer content -->
+\fancyfoot[C]{For research use only, not for clinical use.}
+\fancyfoot[R]{\thepage}
+
+<!-- create red footer line -->
+\renewcommand{\footrulewidth}{1pt}
+\renewcommand{\footrule}{\hbox to\headwidth{%
+    \color{purplepeopleeater}\leaders\hrule height \headrulewidth\hfill}}
+
+```{r include=FALSE}
+
+## Libraries
+library(ggplot2)
+library(ggtree)
+library(phytools)
+library(viridisLite)
+library(viridis)
+library(tidyverse)
+
+date <- Sys.Date()
+
+## Figure size
+
+# get date of report generation
+date <- Sys.Date()
+
+# set figure size
+knitr::opts_chunk$set(out.width = "7.5in", out.height = "8in", fig.align = "left")
+
+# set seed for reproducibility
+set.seed(123)
+
+
+
+```
+
+```{r heatmap-ploting-defaults, echo = FALSE, message = FALSE, warning = FALSE}
+
+# alter these plotting defaults as necessary
+
+# heatmap width relative to plot
+heatmap_width <- 30
+
+# font size for heatmap row and column names
+axis_font_size <- 2.25
+
+# font size for heatmap values
+cell_font_size <- 2.25
+
+# tree offset from heatmap
+tree_offset <- 50
+
+# offset of column names from heatmap; should be negative
+col_offset <- -2
+
+# offset of row names names from heatmap
+row_offset <- -40
+
+# legend title font size
+legend_title_size <- 8
+
+# legend body font size
+legend_text_size <- 6
+
+# height of heatmap colourbar
+colourbar_height <- 0.5
+
+# width of heatmap colourbar
+colourbar_width <- 7
+
+```
+
+```{r tree-plot-defaults, echo = FALSE, message = FALSE, warning = FALSE}
+
+# alter these plotting defaults as necessary
+
+# bootstrap cutoff; plot boostrap values above this threshold
+boot_thresh <- 95
+
+# size of node label text
+node_text_size <- 1.75
+
+# nudge node label text horizontally
+x_nudge <- 0
+
+# tree scale offset
+scale_offset <- 0.1
+
+# tree scale font size
+scale_font_size <- 2
+
+# tip label font size
+tip_font_size <- 2
+
+```
+
+### COVID-19 Analysis
+
+The analysis of COVID-19 sample genomes and associated mutations has been completed. This analysis should not be used as a replacement for a thorough epidemiological investigation.
+
+### Reference Genome Map
+
+The gene positions in the NC_045512_2 (Wuhan) reference genome are shown below.
+
+```{r root-tree, echo = FALSE, message = FALSE, warning = FALSE}
+
+# This block midpoint-roots the tree
+![NC_045512_2 (Wuhan) reference genome](/genome_maps/NC_045512_2_genome_map/NC_045512_2_genome_map.png)
+
+```
+
+
+### Query Genome Map
+
+The gene positions in the Query genome are shown below.
+
+```{r plot-tree, echo = FALSE, message = FALSE, warning = FALSE}
+
+# This block midpoint-roots the tree
+![Query Genome](/genome_maps/sample_genomes/${genbank}_genome_map.png)
+```
+
+### Mutations in the Query Genome
+
+The gene positions in the Query genome are shown below.
+
+```{r plot-tree, echo = FALSE, message = FALSE, warning = FALSE}
+
+# This block midpoint-roots the tree
+![Mutations](/genome_maps/mutations_genome_maps/${genbank}_mutations.png)
+```
+
+### Methods
+
+The figures shown here were generated using sequence data processed with the [Berrywood](https://github.com/StaPH-B/staphb_toolkit/tree/dev) pipeline.
+
+Berrywood uses [Vigor4](https://github.com/JCVenterInstitute/VIGOR4) to annotate the genomes of the SARS-CoV-2 samples provided.
+
+Data from Berrywood is curated into a single pdf report using the [StaPH-B cluster-report-env](https://hub.docker.com/r/staphb/cluster-report-env)

@@ -244,11 +244,12 @@ process annotate {
   set val(name), file(assembly) from annotation_genomes
 
   output:
-  set val(name), file("${name}.gff3") into annotations, convert_gff
+  set val(name), file("${name}_clean.gff3") into annotations, convert_gff
 
   script:
   """
   vigor4 -i ${assembly} -o ${name} -d sarscov2 -f 2
+  grep -hr "gene" ${name}.gff3 > ${name}_clean.gff3 && grep -hr "exon" ${name}.gff3 >> ${name}_clean.gff3
   """
 
 }
@@ -256,20 +257,19 @@ process annotate {
 process convert_gff_gb {
   //errorStrategy 'ignore'
   tag "$name"
-  publishDir "${params.outdir}/genbank_files", mode: 'copy'
+  publishDir "${params.outdir}/genbank_files", mode: 'copy' , pattern:"*.gb"
 
   input:
   set val(name), file(assemblies) from converting_genomes
   set val(name), file(gff_files) from convert_gff
 
   output:
-  set val(name), file("*.gb") into genbank_files, genome_viz
+  set val(name), file('*.gb') into genbank_files, genome_viz, genome_name
   //file("${name}.gbk") into genome_viz
 
   script:
   """
-  gff_to_genbank.py ${gff_files} ${name}_consensus.fasta
-
+  gff_to_genbank.py ${gff_files} ${assemblies}
   for file in *.gb; do mv "\$file" "\${file/_*.gb/.gb}"; done
   """
 
@@ -278,14 +278,25 @@ process convert_gff_gb {
 process viz_genomes {
   //errorStrategy 'ignore'
   tag "$name"
-  publishDir "${params.outdir}/genome_maps", mode: 'copy', pattern:"*.png"
+  publishDir "${params.outdir}/reports/genome_maps/sample_genomes", mode: 'copy', pattern:"*_genome_map.png"
+  publishDir "${params.outdir}/reports/genome_maps/mutations_genome_maps", mode: 'copy', pattern:"*mutations.png"
+  publishDir "${params.outdir}/reports/genome_maps/NC_045512_2_genome_map", mode: 'copy', pattern:"NC_045512_2_genome_map.png"
+  publishDir "${params.outdir}/reports/mutations/csv_files", mode: 'copy', pattern:"*.csv"
+  publishDir "${params.outdir}/reports/mutations/", mode: 'copy', pattern:"*.txt"
 
   input:
-  set val(genbank), file(genbank) from genome_viz
+  set val(name), file(genbank) from genome_viz
 
   output:
-  file("${genbank}_genome_map.png") into genome_maps
-  //file("${name}.gbk") into genome_viz
+  file("${name}_mutations.png") into mutations_viz
+  file("NC_045512_2_genome_map.png") into master_map
+  file("${name}_genome_map.png") into sample_genome
+  file("${name}.csv")
+  file("${name}_diff_blocks_as_features_dict.txt")
+  file("${name}_2.csv")
+  file("${name}_3.csv")
+//  file("${name}_diff_blocks_plain_dict.txt")
+
 
   script:
   """
@@ -293,19 +304,201 @@ process viz_genomes {
   import sys
   import argparse
   from geneblocks import CommonBlocks, load_record, DiffBlocks
+  from dna_features_viewer import BiopythonTranslator
+  from dna_features_viewer import GraphicRecord
+  from dna_features_viewer import CircularGraphicRecord
+  from dna_features_viewer import GraphicFeature
   import matplotlib.pyplot as plt
   import Bio
+  import pandas as pd
+  import csv
+  from pylab import title, figure, xlabel, ylabel, xticks, bar, legend, axis, savefig
 
-  seq_1 = load_record("/reference/NC_045512_2.gb")
-  seq_2 = load_record("${genbank}")
+  # make the custom translator
+  class CustomTranslator(BiopythonTranslator):
 
-  common_blocks = CommonBlocks.from_sequences({'NC_045512_2.gb': seq_1, '${genbank}': seq_2})
-  diff_blocks = DiffBlocks.from_sequences(seq_1, seq_2)
+      label_fields = [
+          "Name",
+          "note",
+          "gene",
+          "product",
+          "source",
+          "locus_tag",
+          "label",
+      ]
 
-  fig, axes = plt.subplots(3, 1, figsize=(20, 20))
-  common_blocks.plot_common_blocks(axes=axes[:-1])
-  diff_blocks.plot(ax=axes[-1], separate_axes=False)
-  axes[-1].set_xlabel("Changes in ${genbank} vs. NC_045512_2.gb")
-  fig.savefig("${genbank}_genome_map.png", bbox_inches='tight')
+      ignored_features_types = ("diff_equal","CDS","mRNA","source")
+      default_box_color = None
+
+
+      def compute_feature_color(self, feature):
+          if feature.qualifiers.get("is_block", False):
+              return BiopythonTranslator.compute_feature_color(self, feature)
+          elif feature.type == "gene":
+              return "green"
+          elif feature.type == "exon":
+              return "blue"
+          elif feature.type == "note":
+              return "pink"
+          elif feature.type == "mRNA_with_minus_1_frameshift":
+              return "gold"
+          else:
+              return "grey"
+
+      @staticmethod
+      def compute_feature_box_linewidth(f):
+          return 1 if f.qualifiers.get("is_block", False) else 0
+
+      @staticmethod
+      def compute_feature_fontdict(f):
+          return {"fontsize": 12 if f.qualifiers.get("is_block", False) else 9}
+
+      def compute_feature_label(self, feature):
+          if feature.type == 'CDS':
+              return None
+          elif feature.type == "mRNA":
+              return None
+          elif feature.type == "source":
+              return None
+          elif feature.type == "exon":
+              return "exon"
+          elif feature.type == "mRNA_with_minus_1_frameshift":
+              return "frameshift"
+          else:
+              return BiopythonTranslator.compute_feature_label(self, feature)
+
+  cr = CustomTranslator()
+
+  seq_1 = cr.translate_record("/reference/NC_045512_2.gb")
+  seq_1.ticks_resolution = 3000
+  ax, _ = seq_1.plot(figure_width=30)
+  plt.suptitle("Genome map of NC_045512_2")
+  ax.figure.tight_layout()
+  ax.figure.savefig("NC_045512_2_genome_map.png")
+
+  seq_2 = cr.translate_record("${genbank}")
+  seq_2.ticks_resolution = 3000
+  ax, _ = seq_2.plot(figure_width=30)
+  plt.suptitle("Genome map of ${name}")
+  ax.figure.tight_layout()
+  ax.figure.savefig("${name}_genome_map.png")
+
+  seq_11 = load_record("/reference/NC_045512_2.gb")
+  seq_22 = load_record("${genbank}")
+
+  diff_blocks = DiffBlocks.from_sequences(seq_11, seq_22)
+  dict = diff_blocks.diffs_as_features()
+  f = open("${name}_diff_blocks_as_features_dict.txt", "a")
+  f.write(str(dict))
+  f.close()
+
+  df = pd.DataFrame(dict)
+  df.to_csv("${name}_1.csv")
+
+  data_dict = [{'SeqFeature':'ORF1ab', 'Start': '0', 'Stop':'2', 'Type': 'replace', 'ExactReplace':'T-C'}, {'SeqFeaure':'ORF1ab', 'Start': '0', 'Stop':'2', 'Type': 'replace', 'ExactReplace':'T-C'}]
+  csv_columns = ['SeqFeaure', 'Start', 'Stop', 'Type', 'ExactReplace']
+  csv_file = "${name}.csv"
+  try:
+    with open(csv_file, 'w') as csvfile:
+      writer = csv.DictWriter(csvfile,fieldnames=csv_columns)
+      writer.writeheader()
+      for data in data_dict:
+        writer.writerow(data)
+  except IOError:
+    print("I/O Error")
+
+  df.to_csv("${name}_2.csv")
+
+  diff_features = DiffBlocks.diffs_as_features(diff_blocks)
+  diff_features_df = pd.DataFrame(diff_features)
+  diff_features_df.to_csv("${name}_3.csv")
+
+  ax1, ax2 = diff_blocks.plot(figure_width=30)
+  plt.suptitle("Changes in ${name} when compared to NC_045512_2.gb")
+  ax1.figure.savefig("${name}_mutations.png")
+  """
+}
+
+process build_report {
+  //errorStrategy 'ignore'
+  tag "$name"
+//  publishDir "${params.outdir}/reports/complete_reports", mode: 'copy', pattern:"*report.pdf"
+  publishDir "${params.outdir}/reports", mode: 'copy', pattern:"*report.md"
+  publishDir "${params.outdir}/reports", mode: 'copy', pattern:"*report.pdf"
+
+  input:
+//  set val(genbank), file(genbank) from genome_viz
+  set val(name), file(genbank) from genome_name
+  file(mutation_map) from mutations_viz
+  file(reference_gene_map) from master_map
+  file(sample_genomes) from sample_genome
+//  file(rmd) from report
+
+  output:
+  file("*report.md") //into mutations_viz
+  file("*report.pdf")
+
+  script:
+  """
+  date=\$(date '+%m%d%y')
+  touch report.md
+  cat >> report.md << EOF
+  # ${name} Mutation Analysis
+
+  <hr style="border:2px solid gray"> </hr>
+
+
+  ### A comparison of a SARS-CoV-2 isolate to the Wuhan reference genome to determine areas of genomic abnormalities
+  Genome maps of the NC_045512.2 reference genome and Query genome are generated to show where the predicetd genes would be encoded in the respective genomes. The reference genome map, NC_045512.2, will always be drawn in the same way.
+  If there are mutations in the query genome, they will be relfected in the Query Genome Map.
+
+  Each "query" genome is compared to the NC_045512.2 (Wuhan) reference genome to identify where mutations are in the genome. These are vizualized in Figure 3. Insertions are shown in green, deletions are shown in red,
+  and "swaps" are shown in yellow. Mutations are shown in the figure as amino acids.
+
+  This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.
+
+
+  ### NC_045512.2 Genome Map
+
+  ![NC_045512.2 Reference Genome Map](${reference_gene_map})
+
+  *This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.*
+
+  <div style="page-break-after: always; visibility: hidden">
+  </div>
+
+  ### Query Genome Map
+
+  ![Query Genome Map](${sample_genomes})
+
+  *This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.*
+
+  <div style="page-break-after: always; visibility: hidden">
+  </div>
+
+  ### Mutations in the Query genome compared to the NC_045512_2 genome
+
+  ![Mutations in Query vs. Reference](${mutation_map})
+
+  *This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.*
+
+  <div style="page-break-after: always; visibility: hidden">
+  </div>
+
+
+  ## Methods
+
+  - The figures shown here were generated using sequence data processed with the [Berrywood](https://github.com/StaPH-B/staphb_toolkit/tree/dev) pipeline.
+
+  - Berrywood uses [Vigor4](https://github.com/JCVenterInstitute/VIGOR4) to annotate the genomes of the SARS-CoV-2 samples provided.
+
+  - Data from Berrywood is curated into a single pdf report using the [StaPH-B Berrywood Cluster Report Environment](https://hub.docker.com/r/staphb/cluster-report-env).
+
+  - Questions and/or concerns can be directed to [Logan Fink](logan.fink@dgs.virginia.gov) and/or [Rachael St. Jacques](rachael.stjacques@dgs.virginia.gov).
+
+  *This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.*
+
+  EOF
+  pandoc report.md -V geometry:"top=2cm, bottom=1.5cm, left=2cm, right=2cm" -o ${name}_report.pdf
   """
 }
