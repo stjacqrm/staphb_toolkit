@@ -103,9 +103,9 @@ process cleanreads {
 process ivar {
   tag "$name"
 
-  publishDir "${params.outdir}/alignments", mode: 'copy',pattern:"*.sorted.bam"
-  publishDir "${params.outdir}/SC2_reads", mode: 'copy',pattern:"*_SC2*.fastq.gz"
-  publishDir "${params.outdir}/assemblies", mode: 'copy', pattern: "*_consensus.fasta"
+  publishDir "${params.outdir}/logs/alignments", mode: 'copy',pattern:"*.sorted.bam"
+  //publishDir "${params.outdir}/SC2_reads", mode: 'copy',pattern:"*_SC2*.fastq.gz"
+  publishDir "${params.outdir}/logs/assemblies", mode: 'copy', pattern: "*_consensus.fasta"
 
 
   input:
@@ -156,7 +156,7 @@ process samtools {
 
 //Collect and format report
 process assembly_results{
-  publishDir "${params.outdir}/assemblies/", mode: 'copy', pattern: "*assembly_metrics.csv"
+  publishDir "${params.outdir}/logs/assemblies/", mode: 'copy', pattern: "*assembly_metrics.csv"
 
   echo true
 
@@ -237,7 +237,7 @@ with open(f"{today}_assembly_metrics.csv",'w') as csvout:
 
 //Step who knows: annotate the SC2 assembled_genomes
 process annotate {
-  publishDir "${params.outdir}/annotations/", mode: 'copy'
+  publishDir "${params.outdir}/results/annotations/", mode: 'copy'
 //  publishDir "${params.outdir}/convert_gff/", mode: 'copy'
 
   input:
@@ -257,7 +257,7 @@ process annotate {
 process convert_gff_gb {
   //errorStrategy 'ignore'
   tag "$name"
-  publishDir "${params.outdir}/genbank_files", mode: 'copy' , pattern:"*.gb"
+  publishDir "${params.outdir}/results/genbank_files", mode: 'copy' , pattern:"*.gb"
 
   input:
   set val(name), file(assemblies) from converting_genomes
@@ -278,11 +278,11 @@ process convert_gff_gb {
 process viz_genomes {
   //errorStrategy 'ignore'
   tag "$name"
-  publishDir "${params.outdir}/reports/genome_maps/sample_genomes", mode: 'copy', pattern:"*_genome_map.png"
-  publishDir "${params.outdir}/reports/genome_maps/mutations_genome_maps", mode: 'copy', pattern:"*mutations.png"
-  publishDir "${params.outdir}/reports/genome_maps/NC_045512_2_genome_map", mode: 'copy', pattern:"NC_045512_2_genome_map.png"
-  publishDir "${params.outdir}/reports/mutations/csv_files", mode: 'copy', pattern:"*.csv"
-  publishDir "${params.outdir}/reports/mutations/", mode: 'copy', pattern:"*.txt"
+  publishDir "${params.outdir}/results/genome_maps/sample_genomes", mode: 'copy', pattern:"*_genome_map.png"
+  publishDir "${params.outdir}/results/genome_maps/mutations_genome_maps", mode: 'copy', pattern:"*mutations.png"
+  publishDir "${params.outdir}/results/genome_maps/NC_045512_2_genome_map", mode: 'copy', pattern:"NC_045512_2_genome_map.png"
+  publishDir "${params.outdir}/results/mutations/csv_files", mode: 'copy', pattern:"*.csv"
+  publishDir "${params.outdir}/results/mutations/text_files/", mode: 'copy', pattern:"*.txt"
 
   input:
   set val(name), file(genbank) from genome_viz
@@ -291,7 +291,7 @@ process viz_genomes {
   file("${name}_mutations.png") into mutations_viz
   file("NC_045512_2_genome_map.png") into master_map
   file("${name}_genome_map.png") into sample_genome
-  file("${name}.csv")
+//  file("${name}.csv")
   file("${name}_diff_blocks_as_features_dict.txt")
   file("${name}_2.csv")
   file("${name}_3.csv")
@@ -395,22 +395,9 @@ process viz_genomes {
   df = pd.DataFrame(dict)
   df.to_csv("${name}_1.csv")
 
-  data_dict = [{'SeqFeature':'ORF1ab', 'Start': '0', 'Stop':'2', 'Type': 'replace', 'ExactReplace':'T-C'}, {'SeqFeaure':'ORF1ab', 'Start': '0', 'Stop':'2', 'Type': 'replace', 'ExactReplace':'T-C'}]
-  csv_columns = ['SeqFeaure', 'Start', 'Stop', 'Type', 'ExactReplace']
-  csv_file = "${name}.csv"
-  try:
-    with open(csv_file, 'w') as csvfile:
-      writer = csv.DictWriter(csvfile,fieldnames=csv_columns)
-      writer.writeheader()
-      for data in data_dict:
-        writer.writerow(data)
-  except IOError:
-    print("I/O Error")
-
   df.to_csv("${name}_2.csv")
 
-  diff_features = DiffBlocks.diffs_as_features(diff_blocks)
-  diff_features_df = pd.DataFrame(diff_features)
+  diff_features_df = pd.DataFrame(dict)
   diff_features_df.to_csv("${name}_3.csv")
 
   ax1, ax2 = diff_blocks.plot(figure_width=30)
@@ -423,8 +410,8 @@ process build_report {
   //errorStrategy 'ignore'
   tag "$name"
 //  publishDir "${params.outdir}/reports/complete_reports", mode: 'copy', pattern:"*report.pdf"
-  publishDir "${params.outdir}/reports", mode: 'copy', pattern:"*report.md"
-  publishDir "${params.outdir}/reports", mode: 'copy', pattern:"*report.pdf"
+  publishDir "${params.outdir}/results/reports", mode: 'copy', pattern:"*report.md"
+  publishDir "${params.outdir}/results/reports", mode: 'copy', pattern:"*report.pdf"
 
   input:
 //  set val(genbank), file(genbank) from genome_viz
@@ -441,8 +428,8 @@ process build_report {
   script:
   """
   date=\$(date '+%m%d%y')
-  touch report.md
-  cat >> report.md << EOF
+  touch ${name}_report.md
+  cat >> ${name}_report.md << EOF
   # ${name} Mutation Analysis
 
   <hr style="border:2px solid gray"> </hr>
@@ -499,6 +486,6 @@ process build_report {
   *This report is intended only for research purposes. No bioinformatics method is designed to replace a thourough, in-depth epidemiological investigation.*
 
   EOF
-  pandoc report.md -V geometry:"top=2cm, bottom=1.5cm, left=2cm, right=2cm" -o ${name}_report.pdf
+  pandoc ${name}_report.md -V geometry:"top=2cm, bottom=1.5cm, left=2cm, right=2cm" -o ${name}_report.pdf
   """
 }
